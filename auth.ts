@@ -1,24 +1,37 @@
-import { Request, Response, NextFunction } from 'express';
+import express from 'express';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { User } from '../models/User';
 
-export interface AuthRequest extends Request {
-    user?: any;
-}
+const router = express.Router();
 
-const authenticateJWT = (req: AuthRequest, res: Response, next: NextFunction) => {
-    const token = req.header('Authorization')?.split(' ')[1];
 
-    if (!token) {
-        return res.status(401).json({ msg: 'Access Denied. No Token Provided.' });
-    }
+router.post('/signup', async (req, res) => {
+  try {
+      console.log('Signup Route Hit');
+      console.log('Request Body:', req.body);
 
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET as string);
-        req.user = decoded;
-        next();
-    } catch (error) {
-        res.status(401).json({ msg: 'Invalid Token' });
-    }
-};
-export default router;
+      const { name, email, password } = req.body;
+      let user = await User.findOne({ email });
 
+      if (user) {
+          console.log('User already exists');
+          return res.status(400).json({ msg: 'User already exists' });
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      user = new User({ name, email, password: hashedPassword });
+      await user.save();
+
+      console.log('✅ User created:', user);
+
+      const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET as string, { expiresIn: '1h' });
+
+      res.status(201).json({ token });
+  } catch (error) {
+      console.error('Signup Error:', error);
+      res.status(500).json({ msg: 'Server error', error });
+  }
+});
